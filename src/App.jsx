@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 import { Analytics } from "@vercel/analytics/react";
 import { useState, useEffect } from "react";
 import { useFetchCurrencies } from "./hooks/useFetchCurrencies";
@@ -11,7 +10,6 @@ import { useUserLocation } from "./hooks/useUserLocation";
 import { useConversionHistory } from "./hooks/useConversionHistory";
 import ConversionChart from "./components/ConversionChart";
 import formatRate from "./services/rateFormatter";
-import BottomAd from "./components/BottomAd";
 
 function App() {
 	const {
@@ -32,13 +30,18 @@ function App() {
 
 	const {
 		history,
-		queryError: histroyError,
+		queryError: historyError,
 		isLoading: isLoadingHistory,
 	} = useConversionHistory(fromCurrency, toCurrency, period);
 
 	useEffect(() => {
 		if (!amount || amount <= 0 || fromCurrency === toCurrency) {
 			setConvertedAmount(amount ? Number(amount) : null);
+			return;
+		}
+
+		if (!toCurrency) {
+			setConvertedAmount(null);
 			return;
 		}
 
@@ -50,8 +53,6 @@ function App() {
 			const result = amount * conversionRate;
 			setConvertedAmount(result);
 		} else {
-			console.error("conversion rate not available");
-			toast.error("conversion rate not available");
 			setConvertedAmount(null);
 		}
 	}, [amount, fromCurrency, toCurrency, currencies]);
@@ -61,16 +62,21 @@ function App() {
 			!hasSetInitialCurrency &&
 			!isLoadingLocation &&
 			!isLoadingCurrencies &&
-			currencies &&
-			locationData
+			currencies
 		) {
 			if (locationData?.currency && currencies[locationData.currency]) {
 				setToCurrency(locationData.currency);
-			} else if (locationData?.currency && !currencies[locationData.currency]) {
-				console.warn(
-					`Detected currency ${locationData.currency} is not supported`
-				);
-				toast.error("Your local currency is not supported. Using USD instead.");
+			} else {
+				setToCurrency("USD");
+
+				if (locationData?.currency) {
+					console.warn(
+						`Detected currency ${locationData.currency} is not supported`
+					);
+					toast.error(
+						"Your local currency is not supported. Using USD instead."
+					);
+				}
 			}
 			setHasSetInitialCurrency(true);
 		}
@@ -84,7 +90,7 @@ function App() {
 
 	const fromRate = currencies[fromCurrency]?.rate;
 	const toRate = currencies[toCurrency]?.rate;
-	const conversionRate = toRate / fromRate;
+	const conversionRate = fromRate && toRate ? toRate / fromRate : null;
 
 	const LoadingButton = () => (
 		<div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full animate-pulse">
@@ -95,6 +101,7 @@ function App() {
 
 	// Add this function to handle swapping
 	const handleSwapCurrencies = () => {
+		if (!toCurrency) return;
 		setFromCurrency(toCurrency);
 		setToCurrency(fromCurrency);
 	};
@@ -103,7 +110,7 @@ function App() {
 	return (
 		<>
 			
-			<ReactQueryDevtools initialIsOpen={true} />
+			{import.meta.env.DEV ? <ReactQueryDevtools initialIsOpen={false} /> : null}
 			<Toaster
 				position="top-center"
 				gutter={12}
@@ -127,8 +134,11 @@ function App() {
 
 			<div className="flex flex-col min-h-screen">
 				<Analytics />
-				{/* Error Banner */}
-				{queryError ? <Toaster /> : null}
+				{queryError ? (
+					<div className="mx-4 mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+						Unable to load current exchange rates. Please try again shortly.
+					</div>
+				) : null}
 
 				{/* Add Navigation Bar */}
 				<nav className="w-full bg-white border-b border-gray-200 mb-4">
@@ -278,6 +288,7 @@ function App() {
 							quote={history.quote}
 							conversionRate={conversionRate}
 							isLoading={isLoadingHistory}
+							error={historyError}
 							period={period}
 							setPeriod={setPeriod}
 						/>

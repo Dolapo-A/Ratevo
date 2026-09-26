@@ -18,23 +18,31 @@ export default function ConversionChart({
 	base,
 	quote,
 	conversionRate,
-	// isLoading,
+	isLoading,
+	error,
 	period,
 	setPeriod,
 }) {
-	// if (isLoading)
-	// 	return (
-	// 		<div className="content-center">
-	// 			<LoadingComponent />
-	// 		</div>
-	// 	);
+	if (isLoading)
+		return (
+			<div className="content-center">
+				<LoadingComponent />
+			</div>
+		);
+
+	if (error)
+		return (
+			<div className="p-6 text-center text-gray-600">
+				Unable to load exchange-rate history. Please try again shortly.
+			</div>
+		);
+
 	if (!data || data.length === 0)
 		return (
-			<h2 className="content-center">
-				<LoadingComponent />
-			</h2>
+			<div className="p-6 text-center text-gray-600">
+				No exchange-rate history is available for this currency pair yet.
+			</div>
 		);
-	// console.log("Here's your history: "+data[data]);
 
 	return (
 		<div className="w-full h-full flex flex-col">
@@ -56,9 +64,7 @@ export default function ConversionChart({
 					</h1>
 				</div>
 				<h3 className="text-base font-semibold mb-2 text-gray-500">
-					{`1 ${base} = ${formatRate(conversionRate)} ${quote} (Last ${
-						data.length
-					} Days)`}
+					{`1 ${base} = ${formatRate(conversionRate)} ${quote}`}
 				</h3>
 				{period >= 6 ? (
 					<div className="flex gap-2 mb-4">

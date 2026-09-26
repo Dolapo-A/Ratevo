@@ -1,18 +1,23 @@
-// Define the fetch function outside of the hook
+const API_BASE_URL =
+	import.meta.env.VITE_RATEVO_API_URL ||
+	"https://currency-exchange-api-eight.vercel.app";
+
 export async function fetchCurrencies() {
-	const response = await fetch(
-		"https://currency-exchange-api-eight.vercel.app/api/rates"
-	);
+	const response = await fetch(`${API_BASE_URL}/api/rates`);
 	if (!response.ok) {
-		throw new Error("Network response was not ok");
+		throw new Error("Unable to load current exchange rates");
 	}
-	console.log("Currency count: " + response.length);
-	return response.json();
+
+	const currencies = await response.json();
+	console.log(`Currency count: ${Object.keys(currencies).length}`);
+	return currencies;
 } 
 
 export async function convertCurrencyApi(fromCurrency, toCurrency, amount) {
 	const response = await fetch(
-		`https://currency-exchange-api-eight.vercel.app/api/convert?from=${fromCurrency}&to=${toCurrency}&amount=${amount}`
+		`${API_BASE_URL}/api/convert?from=${encodeURIComponent(
+			fromCurrency
+		)}&to=${encodeURIComponent(toCurrency)}&amount=${encodeURIComponent(amount)}`
 	);
 	if (!response.ok) {
 		throw new Error(`HTTP error! status: ${response.status}`);
@@ -23,7 +28,11 @@ export async function convertCurrencyApi(fromCurrency, toCurrency, amount) {
 
 export async function getconversionHistoryApi(currencyA, currencyB, period) {
 	const response = await fetch(
-		`https://currency-exchange-api-eight.vercel.app/api/history?currencyA=${currencyA}&currencyB=${currencyB}&period=${period}`
+		`${API_BASE_URL}/api/history?currencyA=${encodeURIComponent(
+			currencyA
+		)}&currencyB=${encodeURIComponent(currencyB)}&period=${encodeURIComponent(
+			period
+		)}`
 	);
 
 	if (!response.ok) {

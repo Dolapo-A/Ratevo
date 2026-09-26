@@ -3,7 +3,7 @@ import { fetchCurrencies } from "../services/currencyService";
 
 export function useFetchCurrencies() {
 	const {
-		data: currencies = [],
+		data: currencies = {},
 		error: queryError,
 		isLoading,
 	} = useQuery({
