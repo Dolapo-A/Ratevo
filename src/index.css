@@ -1,3 +1,238 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/**
+ * Interaction foundations.
+ *
+ * These were added after an audit against the apple-design principles. The
+ * first two are the important ones:
+ *
+ *   1. Nothing in this app used to acknowledge being touched. There was not a
+ *      single pressed state, so a button looked identical before you pressed it
+ *      and after — the interface only reacted once the click had already
+ *      happened. Response is the foundation; without it nothing else is felt.
+ *
+ *   2. Focus was removed rather than restyled. `focus:outline-none` appeared on
+ *      the primary amount input with nothing in its place, so a keyboard user
+ *      could not tell where they were. Removing an indicator is not the same as
+ *      replacing it.
+ *
+ * Both live here rather than on each button so that the reduced-motion
+ * overrides below reach all of them at once.
+ */
+
+@layer base {
+	/**
+	 * A visible focus ring for keyboard users only. Pointer users do not get a
+	 * ring on click, which is the point of :focus-visible rather than :focus.
+	 *
+	 * Uses the brand blue so it reads as intentional rather than as a browser
+	 * default that someone forgot to remove.
+	 */
+	:focus-visible {
+		outline: 2px solid #007bff;
+		outline-offset: 2px;
+		border-radius: 4px;
+	}
+
+	/* Where an element opts out of the global ring, give it one back. The
+	   amount input previously had `focus:outline-none` and nothing else. */
+	.focus-ring:focus-visible {
+		outline: 2px solid #007bff;
+		outline-offset: -2px;
+	}
+
+	/* Respect the platform setting rather than the OS one only — Windows high
+	   contrast is a different switch from macOS reduce-transparency. */
+	@media (forced-colors: active) {
+		:focus-visible {
+			outline: 2px solid Highlight;
+		}
+	}
+}
+
+@layer components {
+	/**
+	 * The dialog's entrance.
+	 *
+	 * Both are real transforms rather than opacity fades alone, because a sheet
+	 * that only fades still feels like a box being switched on. The scrim fades
+	 * in over 180ms while the panel scales from 96% and settles — fast enough to
+	 * read as a response to the tap, slow enough to establish where it came from.
+	 *
+	 * `transform-origin` is centred here rather than anchored to the trigger,
+	 * because the trigger's position varies across the four corners of the
+	 * converter card and a fixed origin would read as arbitrary on three of them.
+	 *
+	 * `motion-safe:` gates both, so a reduced-motion preference gets an instant
+	 * dialog rather than a shortened one.
+	 */
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes sheetIn {
+		from {
+			opacity: 0;
+			transform: scale(0.96);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
+
+	/**
+	 * Press feedback. Apple: "highlight on touch-down (instant), commit on
+	 * touch-up", and scale-to-0.97 over ~100ms as the house value.
+	 *
+	 * `transform` and `opacity` only, so the compositor handles it and the
+	 * element never triggers layout during the press.
+	 */
+	.pressable {
+		transition-property: transform, background-color, border-color, color,
+			opacity;
+		transition-duration: 100ms;
+		transition-timing-function: cubic-bezier(0.2, 0, 0.2, 1);
+	}
+
+	.pressable:active:not(:disabled) {
+		transform: scale(0.97);
+	}
+
+	.pressable:disabled,
+	.pressable[aria-disabled="true"] {
+		opacity: 0.5;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	/**
+	 * A figure that must stay on one line.
+	 *
+	 * The size itself is chosen in JS from the figure's length — see
+	 * `figureSizeClass` — because CSS can measure a container but not a string.
+	 * What lives here is everything CSS *can* decide: that the figure never wraps
+	 * at a space or a comma, that its digits keep a constant width so the whole
+	 * number does not jitter as it recalculates on every keystroke, and that
+	 * anything genuinely too wide is truncated rather than pushed onto a second
+	 * line and out of its card.
+	 *
+	 * Tabular figures matter more here than usual. A converting amount changes
+	 * with every keystroke, and proportional digits would make the entire number
+	 * shift sideways each time.
+	 */
+	.figure-fit {
+		min-width: 0;
+	}
+
+	.figure-fit__value {
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	/* A currency code is a unit, not a number: it must never be separated from the
+	   figure it belongs to or wrapped onto its own line. */
+	.figure-fit__unit {
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+
+	.pressable-soft {
+		transition-property: transform, background-color;
+		transition-duration: 120ms;
+		transition-timing-function: cubic-bezier(0.2, 0, 0.2, 1);
+	}
+
+	.pressable-soft:active:not(:disabled) {
+		transform: scale(0.985);
+	}
+
+	/**
+	 * The modal surface. Translucent rather than a white slab, because a modal is
+	 * a floating layer above content and should read as one. Frosting rises with
+	 * the sheet (Apple: bigger surfaces are thicker), and the bright top edge is
+	 * what sells it as a material catching light rather than a grey box.
+	 */
+	.sheet-surface {
+		background: rgba(255, 255, 255, 0.72);
+		backdrop-filter: blur(24px) saturate(180%);
+		-webkit-backdrop-filter: blur(24px) saturate(180%);
+		border: 1px solid rgba(255, 255, 255, 0.6);
+		box-shadow:
+			0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+			0 12px 40px -12px rgba(15, 23, 42, 0.28),
+			0 4px 12px -4px rgba(15, 23, 42, 0.12);
+	}
+}
+
+/**
+ * Reduced motion is not "no feedback". Every press and every panel still
+ * changes state — they just do it without travel. Removing the movement while
+ * keeping the colour and opacity change is the difference between a calmer
+ * interface and a broken one.
+ *
+ * This matters most for the loading indicators. The app had three indefinite
+ * loops (a pulsing skeleton, a spinner, and a 320px looping Lottie) with no
+ * opt-out, which is precisely the sustained oscillation that causes trouble for
+ * people with vestibular disorders.
+ */
+@media (prefers-reduced-motion: reduce) {
+	/* No travel. Opacity and colour still change, so the state is still legible. */
+	.pressable:active:not(:disabled),
+	.pressable-soft:active:not(:disabled) {
+		transform: none;
+	}
+
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+
+	/* A pulsing skeleton that has been frozen still reads as a skeleton, which
+	   is honest. A frozen spinner reads as a stuck spinner, so the two are
+	   handled differently rather than both being neutered. */
+	.animate-pulse,
+	.animate-spin,
+	.animate-bounce {
+		animation: none !important;
+	}
+}
+
+/**
+ * Translucency is a material, not a preference. Where someone has asked for
+ * less of it, the surface becomes solid rather than merely more transparent.
+ */
+@media (prefers-reduced-transparency: reduce) {
+	.sheet-surface {
+		background: #ffffff;
+		backdrop-filter: none;
+		-webkit-backdrop-filter: none;
+		border-color: #e2e8f0;
+	}
+}
+
+/**
+ * Windows high-contrast / forced-colors. Backdrop filters and translucent
+ * fills do not survive, so borders have to carry the structure instead.
+ */
+@media (forced-colors: active) {
+	.sheet-surface {
+		background: Canvas;
+		border: 1px solid CanvasText;
+		box-shadow: none;
+	}
+}

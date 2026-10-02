@@ -28,6 +28,11 @@ export default [
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
+      // Prop shapes are documented in JSDoc on each component rather than in a
+      // runtime propTypes declaration. This rule was already being suppressed
+      // file-by-file across the codebase; setting it once here is clearer than
+      // repeating the same disable comment in every component.
+      'react/prop-types': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

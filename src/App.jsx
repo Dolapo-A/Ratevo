@@ -1,5 +1,5 @@
 import { Analytics } from "@vercel/analytics/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useFetchCurrencies } from "./hooks/useFetchCurrencies";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ChevronDownIcon, ArrowsUpDownIcon } from "@heroicons/react/24/outline";
@@ -7,9 +7,27 @@ import { currencyFlag } from "./currencyFlag";
 import CurrencyModal from "./components/CurrencyModal";
 import { Toaster, toast } from "react-hot-toast";
 import { useUserLocation } from "./hooks/useUserLocation";
+import { useQuote } from "./hooks/useQuote";
 import { useConversionHistory } from "./hooks/useConversionHistory";
 import ConversionChart from "./components/ConversionChart";
+import AnalyticsPanel from "./features/analytics/AnalyticsPanel";
 import formatRate from "./services/rateFormatter";
+import {
+	groupDigits,
+	sanitizeAmountInput,
+	formatConverted,
+	figureSizeClass,
+} from "./services/amountFormat";
+import { DEFAULT_PERIOD, getPeriod } from "./config/periods";
+import { useAnalytics } from "./hooks/useAnalytics";
+import ErrorBoundary from "./components/ErrorBoundary";
+
+/**
+ * Where to point when the visitor's own currency cannot be used — either it is
+ * unsupported, or it is already the base currency on screen. Ordered so the most
+ * widely traded pair comes first.
+ */
+const DEFAULT_TARGET_CURRENCIES = ["EUR", "GBP", "JPY", "CAD", "AUD"];
 
 function App() {
 	const {
@@ -25,8 +43,22 @@ function App() {
 	const [convertedAmount, setConvertedAmount] = useState(null);
 	const [isFromModalOpen, setIsFromModalOpen] = useState(false);
 	const [isToModalOpen, setIsToModalOpen] = useState(false);
+	// The dialogs hand focus back to these on close. Capturing whatever happened
+	// to be focused instead would record <body> for every mouse user, and
+	// "restore focus to <body>" is the same as losing the user's place.
+	const fromTriggerRef = useRef(null);
+	const toTriggerRef = useRef(null);
 	const [hasSetInitialCurrency, setHasSetInitialCurrency] = useState(false);
-	const [period, setPeriod] = useState(6);
+	// One period, driving both the chart and the analytics. Selecting 3M on the
+	// chart now gives 3M analytics without a second click.
+	const [period, setPeriod] = useState(DEFAULT_PERIOD.historyDays);
+	const analyticsPeriod = getPeriod(period).analyticsDays;
+
+	// The period filter shows each window's own change under its label. The
+	// engine returns `change` for every window on every request, so one fetch
+	// serves all six options. React Query shares the cache entry with
+	// AnalyticsPanel — same key, so this adds no request.
+	const { analytics } = useAnalytics(fromCurrency, toCurrency, analyticsPeriod);
 
 	const {
 		history,
@@ -34,63 +66,80 @@ function App() {
 		isLoading: isLoadingHistory,
 	} = useConversionHistory(fromCurrency, toCurrency, period);
 
+	const {
+		quote,
+		queryError: quoteError,
+		isLoading: isLoadingQuote,
+	} = useQuote(fromCurrency, toCurrency);
+
+	// The input is held as raw digits and grouped for display, so grouping commas
+	// never re-enter the value on the next keystroke.
+	const amountNumber = Number(amount) || 0;
+
+	// Derived once and reused by the figure, its title, and its type scale, so the
+	// three can never disagree about what is on screen.
+	const convertedFigure = formatConverted(convertedAmount);
+
 	useEffect(() => {
-		if (!amount || amount <= 0 || fromCurrency === toCurrency) {
-			setConvertedAmount(amount ? Number(amount) : null);
+		if (!amount || amountNumber <= 0 || fromCurrency === toCurrency) {
+			setConvertedAmount(amount ? amountNumber : null);
 			return;
 		}
 
-		if (!toCurrency) {
+		if (!toCurrency || !quote) {
 			setConvertedAmount(null);
 			return;
 		}
 
-		const fromRate = currencies[fromCurrency]?.rate;
-		const toRate = currencies[toCurrency]?.rate;
-
-		if (fromRate && toRate) {
-			const conversionRate = toRate / fromRate;
-			const result = amount * conversionRate;
-			setConvertedAmount(result);
-		} else {
-			setConvertedAmount(null);
-		}
-	}, [amount, fromCurrency, toCurrency, currencies]);
+		setConvertedAmount(amountNumber * quote.rate);
+	}, [amount, amountNumber, fromCurrency, toCurrency, quote]);
 
 	useEffect(() => {
 		if (
-			!hasSetInitialCurrency &&
-			!isLoadingLocation &&
-			!isLoadingCurrencies &&
-			currencies
+			hasSetInitialCurrency ||
+			isLoadingLocation ||
+			isLoadingCurrencies ||
+			!currencies
 		) {
-			if (locationData?.currency && currencies[locationData.currency]) {
-				setToCurrency(locationData.currency);
-			} else {
-				setToCurrency("USD");
-
-				if (locationData?.currency) {
-					console.warn(
-						`Detected currency ${locationData.currency} is not supported`
-					);
-					toast.error(
-						"Your local currency is not supported. Using USD instead."
-					);
-				}
-			}
-			setHasSetInitialCurrency(true);
+			return;
 		}
+
+		// A currency pair needs two *different* currencies. The detected currency
+		// is only usable if we support it and it is not the base already on
+		// screen — otherwise a visitor in the US, or anyone whose location could
+		// not be resolved, was left looking at USD → USD.
+		const detected = locationData?.currency;
+		const isDetectedUsable =
+			detected && currencies[detected] && detected !== fromCurrency;
+
+		if (isDetectedUsable) {
+			setToCurrency(detected);
+		} else {
+			const fallback =
+				DEFAULT_TARGET_CURRENCIES.find((c) => currencies[c] && c !== fromCurrency) ||
+				"EUR";
+			setToCurrency(fallback);
+
+			if (detected && !currencies[detected]) {
+				console.warn(`Detected currency ${detected} is not supported`);
+				toast.error(
+					`Your local currency (${detected}) is not supported. Showing ${fallback} instead.`
+				);
+			}
+		}
+
+		setHasSetInitialCurrency(true);
 	}, [
 		locationData,
 		currencies,
 		isLoadingLocation,
 		isLoadingCurrencies,
 		hasSetInitialCurrency,
+		fromCurrency,
 	]);
 
-	const fromRate = currencies[fromCurrency]?.rate;
-	const toRate = currencies[toCurrency]?.rate;
-	const conversionRate = fromRate && toRate ? toRate / fromRate : null;
+	const conversionRate = quote?.rate ?? null;
+	const quoteAsOf = quote?.base?.asOf ?? null;
 
 	const LoadingButton = () => (
 		<div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full animate-pulse">
@@ -136,7 +185,13 @@ function App() {
 				<Analytics />
 				{queryError ? (
 					<div className="mx-4 mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
-						Unable to load current exchange rates. Please try again shortly.
+						Unable to load the currency list. Please try again shortly.
+					</div>
+				) : null}
+
+				{quoteError ? (
+					<div className="mx-4 mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+						Unable to load the current exchange rate for {fromCurrency}/{toCurrency}. Please try again shortly.
 					</div>
 				) : null}
 
@@ -150,7 +205,7 @@ function App() {
 						/>
 					</div>
 				</nav>
-
+				<div className="max-w-screen-2xl m-auto ">
 				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4 lg:px-6 px-4">
 					<div className="p-4 flex-grow bg-slate-100 rounded-2xl">
 						<div className="max-w-lg mx-auto">
@@ -165,10 +220,13 @@ function App() {
 							{/* Amount Input Section */}
 							<div className="mb-4">
 								<label className="block text-gray-600 mb-2">Amount</label>
-								<div className="p-4 rounded-2xl bg-white border border-gray-200 flex justify-between items-center">
+								<div className="p-4 rounded-2xl bg-white border border-gray-200 flex justify-between items-center gap-3 figure-fit">
 									<div className="flex items-center gap-2">
 										<button
-											className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full hover:bg-slate-100 transition-colors"
+											type="button"
+										ref={fromTriggerRef}
+											aria-label={`Select base currency, currently ${fromCurrency}`}
+											className="pressable-soft flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full hover:bg-slate-100 active:bg-slate-200"
 											onClick={() => setIsFromModalOpen(true)}
 										>
 											<img
@@ -186,11 +244,12 @@ function App() {
 										</button>
 									</div>
 									<input
-										type="number"
-										min="0"
-										value={amount}
-										onChange={(e) => setAmount(e.target.value)}
-										className="text-2xl text-right w-32 focus:outline-none"
+										type="text"
+										inputMode="decimal"
+										aria-label="Amount to convert"
+										value={groupDigits(amount)}
+										onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
+										className={`figure-fit__value focus-ring min-w-0 flex-1 bg-transparent text-right focus:outline-none ${figureSizeClass(groupDigits(amount))}`}
 										placeholder="0.00"
 									/>
 								</div>
@@ -199,8 +258,11 @@ function App() {
 							{/* Swap Button */}
 							<div className="flex justify-center -my-2 relative">
 								<button
+									type="button"
 									onClick={handleSwapCurrencies}
-									className="bg-white border border-gray-200 rounded-full p-2 hover:bg-gray-50 transition-colors"
+									disabled={!toCurrency}
+									aria-label={`Swap currencies: ${fromCurrency} and ${toCurrency || "none selected"}`}
+									className="pressable bg-white border border-gray-200 rounded-full p-2 hover:bg-gray-50 active:bg-gray-100"
 								>
 									<ArrowsUpDownIcon className="w-5 h-5 text-gray-400" />
 								</button>
@@ -211,12 +273,15 @@ function App() {
 								<label className="block text-gray-600 mb-2">
 									Converted Amount
 								</label>
-								<div className="p-4 rounded-2xl bg-white border border-gray-200 flex justify-between items-center">
-									{isLoadingLocation || isLoadingCurrencies ? (
+								<div className="p-4 rounded-2xl bg-white border border-gray-200 flex justify-between items-center gap-3 figure-fit">
+									{isLoadingLocation || isLoadingCurrencies || isLoadingQuote ? (
 										<LoadingButton />
 									) : (
 										<button
-											className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full hover:bg-slate-100 transition-colors"
+											type="button"
+											ref={toTriggerRef}
+											aria-label={`Select target currency, currently ${toCurrency}`}
+											className="pressable-soft flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full hover:bg-slate-100 active:bg-slate-200"
 											onClick={() => setIsToModalOpen(true)}
 										>
 											<img
@@ -234,27 +299,31 @@ function App() {
 											<ChevronDownIcon className="w-4 h-4 text-gray-400" />
 										</button>
 									)}
-									<span className="text-2xl text-gray-400">
-										{convertedAmount
-											? `${convertedAmount
-													.toFixed(2)
-													.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} ${toCurrency}`
-											: `0.00 ${toCurrency}`}
+									<span
+										className="figure-fit__value min-w-0 flex-1 text-right font-bold text-slate-900"
+										title={convertedFigure ?? undefined}
+									>
+										<span className={figureSizeClass(convertedFigure)}>
+											{convertedFigure ?? "0.00"}
+										</span>
+										<span className="figure-fit__unit ml-1.5 text-lg font-semibold text-gray-400">
+											{toCurrency}
+										</span>
 									</span>
 								</div>
 							</div>
 
 							{/* Conversion Details */}
 							<div className="bg-gray-50 rounded-2xl p-4 mb-6 space-y-3">
-								<div className="flex justify-between">
+								<div className="flex justify-between gap-4">
 									<span className="text-gray-600">Converting</span>
-									<span>
-										{amount || 0} {fromCurrency}
+									<span className="num tabular-nums">
+										{amount ? groupDigits(amount) : 0} {fromCurrency}
 									</span>
 								</div>
-								<div className="flex justify-between">
+								<div className="flex justify-between gap-4">
 									<span className="text-gray-600">Exchange Rate</span>
-									<span>
+									<span className="num tabular-nums">
 										{1} {fromCurrency} ={" "}
 										{conversionRate ? formatRate(conversionRate) : "X"}{" "}
 										{toCurrency}
@@ -269,6 +338,7 @@ function App() {
 								onSelect={setFromCurrency}
 								currencies={currencies}
 								selectedCurrency={fromCurrency}
+								returnFocusTo={fromTriggerRef}
 							/>
 
 							<CurrencyModal
@@ -277,30 +347,49 @@ function App() {
 								onSelect={setToCurrency}
 								currencies={currencies}
 								selectedCurrency={toCurrency}
+								returnFocusTo={toTriggerRef}
 							/>
 						</div>
 					</div>
 
 					<div className="bg-slate-100 rounded-2xl h-full flex justify-center overflow-hidden">
-						<ConversionChart
-							data={history.data}
-							base={history.base}
-							quote={history.quote}
-							conversionRate={conversionRate}
-							isLoading={isLoadingHistory}
-							error={historyError}
-							period={period}
-							setPeriod={setPeriod}
-						/>
+						<ErrorBoundary label="The chart could not be displayed.">
+							<ConversionChart
+								data={history.data}
+								base={history.base}
+								quote={history.quote}
+								conversionRate={conversionRate}
+								isLoading={isLoadingHistory}
+								error={historyError}
+								period={period}
+								setPeriod={setPeriod}
+								change={analytics?.change}
+								changeLabel={analytics?.changeLabel}
+							/>
+						</ErrorBoundary>
 					</div>
 				</div>
 
-				{/* Footer */}
-				{/* <footer className="bg-slate-100 text-center py-4">
-					<BottomAd />
+				{/* Analytics. Every surface below is independently flagged in
+				    src/config/features.js, so this block can ship a piece at a
+				    time. With every flag off it renders nothing at all and the
+				    converter looks exactly as it did before. */}
+				<div className="grid px-4 lg:px-6">
+					<ErrorBoundary label="The analytics panel could not be displayed.">
+						<AnalyticsPanel
+							base={fromCurrency}
+							quote={toCurrency}
+							period={analyticsPeriod}
+						/>
+					</ErrorBoundary>
+				</div>
+				</div>
 
-					<p className="text-sm">Developed by Dolapo Araoye</p>
-					<div className="flex justify-center space-x-4 mt-2">
+				{/* Footer. The ExchangeRate-API attribution link is a licence
+				    requirement of the free tier we depend on, not decoration —
+				    do not remove it without moving to a different feed. */}
+				<footer className="bg-slate-100 text-center py-5 mt-2">
+					{/* <div className="flex justify-center space-x-4 text-sm">
 						<a
 							href="https://github.com/Dolapo-A"
 							target="_blank"
@@ -317,8 +406,25 @@ function App() {
 						>
 							LinkedIn
 						</a>
-					</div>
-				</footer> */}
+					</div> */}
+
+					<p className="text-xs text-gray-500 mt-3">
+						Rates by{" "}
+						<a
+							href="https://www.exchangerate-api.com"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="underline hover:text-gray-700"
+						>
+							Exchange Rate API
+						</a>
+						{quoteAsOf ? ` · snapshot ${quoteAsOf}` : ""}
+					</p>
+					<p className="text-xs text-gray-500">
+						Indicative mid-rates for information only. Not investment advice.
+					</p>
+					{/* <p className="text-xs text-gray-400 mt-1">Developed by Dolapo Araoye</p> */}
+				</footer>
 			</div>
 		</>
 	);

@@ -2,9 +2,27 @@
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
+		<!--
+			Every claim here is checkable against the product, because a search
+			result promising things the page does not do is the cheapest way to lose
+			the trust the rest of the work is built on. Specifically:
+
+			  - "daily indicative rates", not "live". The feed publishes one
+			    snapshot per calendar day and the provider states the rates are
+			    indicative mid-rates, not for settlement. The footer says so too.
+			  - "161", which is what the picker actually offers. The provider
+			    publishes 166; five of them are not selectable.
+			  - no favourites and no side-by-side price comparison. Neither exists.
+			    COMPARE is an unbuilt Phase 2 flag, so describing it would be
+			    advertising a roadmap item.
+
+			The differentiator is the analysis, not the arithmetic — anyone can
+			multiply two numbers. That is what the description leads with, and what
+			the title now says instead of "Live Rates".
+		-->
 		<meta
 			name="description"
-			content="Ratevo — the fast, smart currency companion for travelers, businesses, and online shoppers. Instantly convert between 166 global currencies with live market rates, compare prices side-by-side, save favorites, and explore clear rate trends. Reliable, secure, and designed for effortless conversions wherever you are."
+			content="Convert between 161 currencies at daily indicative rates — plus the range, trend and volatility behind the number, and a composite Ratevo score."
 		/>
 		<link rel="icon" type="image/svg+xml" href="/logo.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -15,7 +33,7 @@
 			href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@300..800&display=swap"
 			rel="stylesheet"
 		/>
-		<title>Ratevo — Instantly Convert & Compare 166 Currencies with Live Rates</title>
+		<title>Ratevo — Convert 161 Currencies with Rate Analytics</title>
 		<script
 			async
 			src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2268924820751234"
