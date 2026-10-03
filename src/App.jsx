@@ -224,7 +224,7 @@ function App() {
 					<h1 className="text-[22px] font-semibold leading-tight tracking-tight text-center text-slate-900 sm:text-2xl">
 						What a currency rate actually means, not just what it is.
 					</h1>
-					<p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500">
+					<p className="mt-1.5 text-[13.5px] leading-relaxed text-center text-slate-500">
 						A daily indicative snapshot for 161 currencies, with the range, trend and
 						volatility behind it. Where Ratevo cannot measure something, it says so
 						rather than guessing.
