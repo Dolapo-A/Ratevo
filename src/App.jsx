@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useFetchCurrencies } from "./hooks/useFetchCurrencies";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ChevronDownIcon, ArrowsUpDownIcon } from "@heroicons/react/24/outline";
-import { currencyFlag } from "./currencyFlag";
+import CurrencyFlag from "./components/CurrencyFlag";
 import CurrencyModal from "./components/CurrencyModal";
 import { Toaster, toast } from "react-hot-toast";
 import { useUserLocation } from "./hooks/useUserLocation";
@@ -222,11 +222,12 @@ function App() {
 				    up front rather than left below the fold to be found. */}
 				<header className="px-4 lg:px-6 mt-4 mb-10 max-w-screen-lg m-auto">
 					<h1 className="text-[22px] font-semibold leading-tight tracking-tight text-center text-slate-900 sm:text-2xl">
-						Convert any of 161 currencies — and see what the rate actually means.
+						What a currency rate actually means, not just what it is.
 					</h1>
 					<p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500">
-						A daily indicative snapshot, plus the range, trend and volatility behind it.
-						Where Ratevo cannot measure something, it says so rather than guessing.
+						A daily indicative snapshot for 161 currencies, with the range, trend and
+						volatility behind it. Where Ratevo cannot measure something, it says so
+						rather than guessing.
 					</p>
 				</header>
 
@@ -253,13 +254,20 @@ function App() {
 						</LoadingRegion>
 					</div>
 				)}
-				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4 ">
+				{/* `min-w-0` on the children, not just on this grid.
+						    Without it the chart column refused to shrink below its content
+						    width, and the converter column — which has an amount input that
+						    sizes to its content — took the rest. On a 390px phone the chart
+						    cell collapsed to 159px, which is what pushed the period filter's
+						    last option off the right edge. A grid item defaults to
+						    `min-width: auto`, so it must be told it may shrink. */}
+					<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4 ">
 						<LoadingRegion
 							isLoading={isConvertingRate}
 							label="Conversion"
-							className="p-4 flex-grow bg-slate-100 rounded-2xl"
+							className="min-w-0 p-4 flex-grow bg-slate-100 rounded-2xl"
 						>
-						<div className="max-w-lg mx-auto">
+						<div className="min-w-0 max-w-lg mx-auto">
 							{/* Title */}
 							<h2 className="text-lg font-semibold mb-2 tracking-tight">
 								Convert
@@ -280,16 +288,12 @@ function App() {
 											className="pressable-soft flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full hover:bg-slate-100 active:bg-slate-200"
 											onClick={() => setIsFromModalOpen(true)}
 										>
-											<img
-												src={`/flags/${currencyFlag[
-													fromCurrency
-												]?.toLowerCase()}.png`}
-												alt={fromCurrency}
-												className="w-7 h-5 object-cover border border-gray-300 shadow-sm rounded"
-												onError={(e) => {
-													e.target.src = "/flags/default-flag.png";
-												}}
-											/>
+										{/* CurrencyFlag rather than an inline <img>: `toCurrency` starts as an
+										    empty string, so `currencyFlag[""]` was undefined and this used to
+										    request `/flags/undefined.png`. The old fallback pointed at
+										    `/flags/default-flag.png`, which is not in public/flags — so a miss
+										    became one 404 and then another, with no image either way. */}
+										<CurrencyFlag code={fromCurrency} className="w-7 h-5" />
 											<span>{fromCurrency}</span>
 											<ChevronDownIcon className="w-4 h-4 text-gray-400" />
 										</button>
@@ -335,17 +339,7 @@ function App() {
 											className="pressable-soft flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full hover:bg-slate-100 active:bg-slate-200"
 											onClick={() => setIsToModalOpen(true)}
 										>
-											<img
-												src={`/flags/${currencyFlag[
-													toCurrency
-												]?.toLowerCase()}.png`}
-												alt={toCurrency}
-												className="w-7 h-5 object-cover border border-gray-300 shadow-sm rounded"
-												onError={(e) => {
-													e.target.src = "/flags/default-flag.png";
-													e.target.onerror = null;
-												}}
-											/>
+										<CurrencyFlag code={toCurrency} className="w-7 h-5" />
 											<span>{toCurrency}</span>
 											<ChevronDownIcon className="w-4 h-4 text-gray-400" />
 										</button>
@@ -415,7 +409,7 @@ function App() {
 							</div>
 						</LoadingRegion>
 
-					<div className="bg-slate-100 rounded-2xl h-full flex justify-center overflow-hidden">
+					<div className="min-w-0 bg-slate-100 rounded-2xl h-full flex justify-center overflow-hidden">
 						<ErrorBoundary label="The chart could not be displayed.">
 							<ConversionChart
 								data={history.data}

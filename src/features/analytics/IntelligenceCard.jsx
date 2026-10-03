@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { FieldLabel, RegisterPill } from "./primitives";
 import RangeExtremes from "./RangeExtremes";
+import { fmtRateLine } from "../../services/rateFormat";
+import CurrencyFlag from "../../components/CurrencyFlag";
 import { useCountUp } from "../../hooks/useCountUp";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
@@ -38,7 +40,13 @@ function fmt(value, digits = 2) {
 	});
 }
 
-/** One column of the summary grid. Renders honestly when unmeasurable. */
+/**
+ * One column of the summary grid. Renders honestly when unmeasurable.
+ *
+ * `value` may be a node as well as a string, because the pair column needs flags
+ * inline before each code and cannot compose that from a string. The missing check
+ * is on nullishness either way, so a node still triggers the withheld state.
+ */
 function Measure({ label, value, detail, unavailable, children }) {
 	const missing = value === null || value === undefined;
 
@@ -207,6 +215,65 @@ export default function IntelligenceCard({ analytics, baseCurrency, quoteCurrenc
 	const scoreMissing = score === null || score === undefined;
 	const days = range?.days ?? analytics.period;
 
+	/**
+	 * The pair and its rate, taken from the engine's own response rather than from
+	 * props.
+	 *
+	 * `analytics.pair` and `analytics.currentRate` are the same figures the chart
+	 * header shows, sourced from one request. Passing them in as separate props
+	 * would mean two sources that could disagree — and a card whose first column
+	 * says USD/NGN while the rate beside it came from somewhere else is worse than
+	 * a card with no first column at all.
+	 *
+	 * The engine's pair is preferred over the props because it is the pair the
+	 * measurements below were actually computed from.
+	 */
+	const engineBase =
+		typeof analytics.base === "string" && analytics.base
+			? analytics.base
+			: baseCurrency || null;
+	const engineQuote =
+		typeof analytics.quote === "string" && analytics.quote
+			? analytics.quote
+			: quoteCurrency || null;
+
+	const pairKnown = Boolean(engineBase && engineQuote);
+	const currentRate = analytics.currentRate;
+	const hasRate = currentRate !== null && currentRate !== undefined && Number.isFinite(currentRate);
+
+	/**
+	 * The pair, as flags and codes rather than an arrow.
+	 *
+	 * A column labelled "USD → NGN" makes you read two three-letter codes and
+	 * remember which is which; the arrow says the direction but not that NGN is
+	 * what you would be converting *into*. Flags in front of each code say both,
+	 * and they are the same flags already used by the converter, so the pair
+	 * recognisable here is recognisable there.
+	 *
+	 * Written as a node rather than extending `fmtPair`, because a string cannot
+	 * carry an image.
+	 */
+	const pairLabel = pairKnown ? (
+		<span className="flex items-center gap-1.5">
+			<span className="inline-flex items-center gap-1">
+				<CurrencyFlag code={engineBase} />
+				{engineBase}
+			</span>
+			<span aria-hidden="true" className="text-slate-300">
+				→
+			</span>
+			<span className="inline-flex items-center gap-1">
+				<CurrencyFlag code={engineQuote} />
+				{engineQuote}
+			</span>
+		</span>
+	) : null;
+	// Withheld rather than substituted when the rate is unmeasured. An em dash in
+	// this column reads as "no figure yet", which is true; a zero would read as a
+	// rate of zero.
+	const rateLine =
+		pairKnown && hasRate ? fmtRateLine(engineBase, engineQuote, currentRate) : null;
+
 	// A score is a statement about a period, so a number without its period is
 	// not yet a fact the user can check against anything.
 	const windowNote = (() => {
@@ -221,8 +288,20 @@ export default function IntelligenceCard({ analytics, baseCurrency, quoteCurrenc
 
 	return (
 		<section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
-			{/* ---- the three measurements, read together ---- */}
-			<div className="grid divide-y divide-slate-200 sm:grid-cols-3 sm:divide-y-0 sm:divide-x">
+			{/* ---- what is being measured, then the three measurements of it ----
+			    Four columns rather than three. The pair and its rate come first
+			    because every other figure on this card is a statement about *that*
+			    pair: a 30-day range or a trend score means nothing until you know which
+			    two currencies it is between. Reading them first also means the reader
+			    never has to look up to find out what they are looking at. */}
+			<div className="grid divide-y divide-slate-200 sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x">
+				<Measure
+					label="Selected pair"
+					value={pairLabel}
+					detail={rateLine}
+					unavailable="Pick two currencies above"
+				/>
+
 				<Measure
 					label={`${days}-day range`}
 					value={
@@ -282,9 +361,16 @@ export default function IntelligenceCard({ analytics, baseCurrency, quoteCurrenc
 				/>
 			</div>
 
-			{/* ---- the score, directly beneath what it summarises ---- */}
+			{/* ---- the score, directly beneath what it summarises ----
+			    Wrapping rather than a single row: the gauge, the label and the
+			    disclosure cannot all share one line on a phone. Left to flex, the
+			    label column collapsed to about ten characters — "Ratevo score ·
+			    Positive" broke across three lines and the description below it broke
+			    across four, while the disclosure floated in the space beside them. So
+			    the disclosure wraps to its own line and takes the full width, and the
+			    gauge keeps the line to itself. */}
 			<div className="border-t border-slate-200 px-5 py-4">
-				<div className="flex items-start gap-4">
+				<div className="flex flex-wrap items-start gap-x-4 gap-y-3">
 					{scoreMissing ? (
 						<div className="min-w-0">
 							<div className="flex items-center gap-2">
@@ -300,7 +386,10 @@ export default function IntelligenceCard({ analytics, baseCurrency, quoteCurrenc
 					) : (
 						<>
 							<ScoreGauge score={score} band={analytics.scoreBand} />
-							<div className="min-w-0 flex-1">
+							{/* `basis` rather than `flex-1`: this column needs enough width to
+							    hold a sentence on one line, and flex alone let it shrink to
+							    whatever the disclosure had not taken. */}
+							<div className="min-w-0 flex-1 basis-[11rem]">
 								<p className="text-[13px] font-bold text-slate-900">
 									Ratevo score
 									<span className="text-slate-400"> · </span>
@@ -318,14 +407,16 @@ export default function IntelligenceCard({ analytics, baseCurrency, quoteCurrenc
 						</>
 					)}
 
-					{/* Far right, as designed. Only offered when there is a breakdown
-					    to open — a disclosure that reveals nothing is worse than none. */}
+					{/* Top-aligned, and on its own line on a phone. `self-start` rather than
+					    `self-center`: it is a control for the figure beside it, and
+					    centring it against a three-line description left it floating in
+					    the middle of the block rather than beside the score it opens. */}
 					{!scoreMissing && components.length > 0 && (
 						<button
 							type="button"
 							onClick={() => setShowBreakdown((v) => !v)}
 							aria-expanded={showBreakdown}
-							className="pressable ml-auto flex shrink-0 items-center gap-1 self-center rounded-lg px-2 py-1.5 text-[13px] font-semibold text-measured hover:bg-measured-soft active:bg-measured-line"
+							className="pressable ml-auto flex w-full shrink-0 items-center justify-end gap-1 self-start rounded-lg px-2 py-1.5 text-[13px] font-semibold text-measured hover:bg-measured-soft active:bg-measured-line sm:w-auto sm:justify-start"
 						>
 							{showBreakdown ? "Hide breakdown" : "See breakdown"}
 							<span aria-hidden="true" className="text-[15px] leading-none">

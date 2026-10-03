@@ -52,9 +52,15 @@ function ChartHeader({
 	// Title and rate on the left, the control on the right, sharing one baseline
 	// row. The filter sits opposite the figures it changes them, and above it on
 	// narrow screens rather than squeezing the chart.
+	//
+	// `min-w-0` on the figures column is load-bearing. The filter is a fixed-width
+	// segmented control with six options and will not compress, so without it the
+	// text column refused to shrink below its content width and pushed the control
+	// off the right edge of the card entirely — the 1Y option was simply not on
+	// screen, with no scrollbar to reveal it.
 	return (
 		<div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 p-4 pb-0 mb-8">
-			<div className="min-w-0">
+			<div className="min-w-0 flex-1">
 				<p className="text-lg font-semibold tracking-tight">{rangeLabel}</p>
 				<p className="mt-1 text-base font-semibold text-gray-500">{rateLine}</p>
 			</div>

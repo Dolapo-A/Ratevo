@@ -23,7 +23,7 @@ function PeriodFilter({ value, onchange, change, changeLabel }) {
 		<div
 			role="group"
 			aria-label="Chart period"
-			className="flex shrink-0 items-stretch rounded-full border border-slate-200 bg-slate-100 p-1"
+			className="flex w-full items-stretch rounded-full border border-slate-200 bg-slate-100 p-1 sm:w-auto sm:shrink-0"
 		>
 			{PERIODS.map((option) => {
 				const days = option.analyticsDays;
@@ -64,7 +64,7 @@ function PeriodFilter({ value, onchange, change, changeLabel }) {
 							unavailable ||
 							`${label}: ${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(2)}% · measured by ratevo-analytics`
 						}
-						className={`pressable flex min-w-[3.25rem] flex-col items-center gap-0.5 rounded-full px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-colors sm:min-w-[3.75rem] sm:text-xs ${
+						className={`pressable flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-full px-1 py-1.5 text-[10px] font-bold uppercase tracking-wide transition-colors sm:min-w-[3.75rem] sm:flex-none sm:px-2.5 sm:text-xs ${
 							isActive
 								? "bg-blue-500 text-white"
 								: "text-slate-600 hover:bg-slate-200 active:bg-slate-300"
