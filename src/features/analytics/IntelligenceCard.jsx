@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FieldLabel, RegisterPill } from "./primitives";
+import RangeExtremes from "./RangeExtremes";
+import { useCountUp } from "../../hooks/useCountUp";
+import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 /**
  * The intelligence summary — one card, one reading.
@@ -69,8 +72,130 @@ function Measure({ label, value, detail, unavailable, children }) {
 	);
 }
 
+/**
+ * One end of the range track.
+ *
+ * Pinned just outside the track rather than on it, so a 6px dot cannot be
+ * swallowed by a 4px-tall bar at either extreme. `start`/`end` rather than a
+ * left percentage, because the two positions are 0% and 100% — anything else
+ * would be a number pretending to be a measurement.
+ *
+ * The low is the smaller dot and the high the larger. Size is doing real work
+ * here: it is the part of this distinction that survives with no colour
+ * perception at all, and it also stops the two from looking like a decorative
+ * repeat of the same dot.
+ */
+function ExtremeMarker({ at, revealed, reducedMotion }) {
+	const isLow = at === "low";
+
+	return (
+		<span
+			aria-hidden="true"
+			data-extreme={at}
+			data-shown={revealed ? "yes" : "no"}
+			className={`absolute top-1/2 -translate-y-1/2 rounded-full ring-2 ring-white ${
+				isLow
+					? "left-0 h-1.5 w-1.5 -translate-x-1/2 bg-slate-400"
+					: "right-0 h-2 w-2 translate-x-1/2 bg-measured-deep"
+			}`}
+			style={{
+				opacity: revealed || reducedMotion ? 1 : 0,
+				transition: reducedMotion ? undefined : "opacity 400ms ease-out",
+			}}
+		/>
+	);
+}
+
+/**
+ * The score, as a semicircle that fills as the number counts up.
+ *
+ * A gauge earns its place only if the arc means something — which is why the
+ * full track is drawn at full length and the fill is a proportion of exactly
+ * that, rather than being scaled to whichever value happens to be showing. A
+ * score of 40 fills two fifths of a fixed track, every time.
+ *
+ * The arc sweeps with a CSS transition rather than per-frame: it is a stroke
+ * property changing between two rendered values, which the compositor handles.
+ * Only the number needs a value per frame.
+ *
+ * The figure is exposed to assistive technology once, through the label, so a
+ * screen reader hears "36 out of 100" rather than the intermediate counts.
+ */
+function ScoreGauge({ score, band }) {
+	const reducedMotion = usePrefersReducedMotion();
+	const radius = 40;
+	const circumference = Math.PI * radius;
+
+	const shown = useCountUp(score, reducedMotion ? 0 : 900, 120);
+
+	// One flag, one transition. The element renders at its empty state first and
+	// flips to filled on the next frame, so the browser interpolates.
+	const [revealed, setRevealed] = useState(reducedMotion);
+	useEffect(() => {
+		if (reducedMotion) {
+			setRevealed(true);
+			return undefined;
+		}
+		const frame = requestAnimationFrame(() => setRevealed(true));
+		return () => cancelAnimationFrame(frame);
+	}, [reducedMotion, score]);
+
+	const track = "M12,50 A40,40 0 0 1 92,50";
+	const filledFraction = Math.max(0, Math.min(1, score / 100));
+
+	return (
+		<svg
+			width="104"
+			height="60"
+			viewBox="0 0 104 60"
+			role="img"
+			aria-label={`Ratevo score ${score} out of 100, ${band}`}
+			className="shrink-0 overflow-visible"
+		>
+			<path d={track} fill="none" stroke="#eef2f7" strokeWidth="9" strokeLinecap="round" />
+			<path
+				d={track}
+				fill="none"
+				stroke="#2b4ed8"
+				strokeWidth="9"
+				strokeLinecap="round"
+				strokeDasharray={circumference}
+				strokeDashoffset={revealed ? circumference * (1 - filledFraction) : circumference}
+				style={
+					reducedMotion
+						? undefined
+						: { transition: "stroke-dashoffset 900ms cubic-bezier(0.22, 1, 0.36, 1)" }
+				}
+			/>
+			<text
+				x="52"
+				y="46"
+				textAnchor="middle"
+				aria-hidden="true"
+				style={{ fontSize: "26px", fontWeight: 800, fill: "#0f172a" }}
+			>
+				{Math.round(shown)}
+			</text>
+		</svg>
+	);
+}
+
 export default function IntelligenceCard({ analytics, baseCurrency, quoteCurrency }) {
 	const [showBreakdown, setShowBreakdown] = useState(false);
+	const reducedMotion = usePrefersReducedMotion();
+	// A primitive, not `analytics.range` — a property access in a dependency list
+	// is evaluated even on the path where analytics is null.
+	const rangePosition = analytics?.range?.positionPct ?? null;
+
+	const [barRevealed, setBarRevealed] = useState(reducedMotion);
+	useEffect(() => {
+		if (reducedMotion) {
+			setBarRevealed(true);
+			return undefined;
+		}
+		const frame = requestAnimationFrame(() => setBarRevealed(true));
+		return () => cancelAnimationFrame(frame);
+	}, [reducedMotion, rangePosition]);
 
 	if (!analytics) return null;
 
@@ -109,12 +234,27 @@ export default function IntelligenceCard({ analytics, baseCurrency, quoteCurrenc
 					unavailable="Not enough history to measure a range yet"
 				>
 					{range && (
-						<span className="mt-2.5 block h-1 w-full overflow-hidden rounded-full bg-slate-100">
-							<span
-								className="block h-full rounded-full bg-measured"
-								style={{ width: `${Math.max(0, Math.min(100, range.positionPct))}%` }}
-							/>
-						</span>
+						<>
+							{/* The two ends are pinned to the track itself, so the bar becomes the
+							    axis the dates are read against rather than decoration beside
+							    them. They sit at 0% and 100% because that is where the low and
+							    the high are by definition; the fill between them is where the
+							    rate sits right now. */}
+							<span className="relative mt-2.5 block h-1 w-full rounded-full bg-slate-100">
+								<ExtremeMarker at="low" revealed={barRevealed} reducedMotion={reducedMotion} />
+								<ExtremeMarker at="high" revealed={barRevealed} reducedMotion={reducedMotion} />
+								<span
+									className="block h-full rounded-full bg-measured"
+									style={{
+										width: `${barRevealed ? Math.max(0, Math.min(100, range.positionPct)) : 0}%`,
+										transition: reducedMotion
+											? undefined
+											: "width 800ms cubic-bezier(0.22, 1, 0.36, 1)",
+									}}
+								/>
+							</span>
+							<RangeExtremes range={range} />
+						</>
 					)}
 				</Measure>
 
@@ -159,12 +299,7 @@ export default function IntelligenceCard({ analytics, baseCurrency, quoteCurrenc
 						</div>
 					) : (
 						<>
-							<p
-								className="num shrink-0 text-[30px] font-bold leading-none tabular-nums text-slate-900"
-								aria-label={`Ratevo score ${score} out of 100, ${analytics.scoreBand}`}
-							>
-								{score}
-							</p>
+							<ScoreGauge score={score} band={analytics.scoreBand} />
 							<div className="min-w-0 flex-1">
 								<p className="text-[13px] font-bold text-slate-900">
 									Ratevo score

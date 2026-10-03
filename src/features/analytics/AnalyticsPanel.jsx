@@ -1,11 +1,10 @@
 import { FEATURES } from "../../config/features";
-import { useAnalytics } from "../../hooks/useAnalytics";
 import { AnalyticsCard } from "./primitives";
+import { NoteSkeleton, WhatChangedSkeleton } from "../../components/Skeleton";
 import AnomalyList from "./AnomalyList";
 import WhatChanged from "./WhatChanged";
 import CoverageNote from "./CoverageNote";
 import MissingDays from "./MissingDays";
-import IntelligenceCard from "./IntelligenceCard";
 
 /**
  * The analytics panel — composed from independently flagged pieces.
@@ -16,52 +15,16 @@ import IntelligenceCard from "./IntelligenceCard";
  * converter looks exactly as it did before any of this shipped.
  */
 
-function Skeleton() {
-	return (
-		<div className="space-y-3" aria-hidden="true">
-			<div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
-				<div className="grid sm:grid-cols-3">
-					{[0, 1, 2].map((i) => (
-						<div key={i} className="space-y-2 px-5 py-4">
-							<div className="h-2 w-16 animate-pulse rounded bg-slate-100" />
-							<div className="h-5 w-28 animate-pulse rounded bg-slate-100" />
-							<div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
-						</div>
-					))}
-				</div>
-				<div className="border-t border-slate-200 px-5 py-4">
-					<div className="flex items-center gap-4">
-						<div className="h-7 w-12 animate-pulse rounded bg-slate-100" />
-						<div className="flex-1 space-y-2">
-							<div className="h-3 w-40 animate-pulse rounded bg-slate-100" />
-							<div className="h-3 w-32 animate-pulse rounded bg-slate-100" />
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
-	);
-}
-
-export default function AnalyticsPanel({ base, quote, period }) {
+export default function AnalyticsPanel({ analytics, isLoading }) {
 	const enabled = Object.values(FEATURES).some(Boolean);
-	const { analytics, isLoading } = useAnalytics(base, quote, period, enabled);
 
 	if (!enabled) return null;
 
 	return (
 		<div className="space-y-4">
-			{/* One card for the three measurements and the score that summarises
-			    them. The former multi-window performance strip is gone: it repeated
-			    the numbers already printed under each chart filter chip, and pushed
-			    everything below it out of the first screen. */}
-			{FEATURES.INTELLIGENCE && analytics && (
-				<IntelligenceCard
-					analytics={analytics}
-					baseCurrency={base}
-					quoteCurrency={quote}
-				/>
-			)}
+			{/* The intelligence card is not here: it sits above the converter in
+			    App.jsx, because the thing that differentiates Ratevo should be the
+			    first thing on the page rather than something below the fold. */}
 
 			<div className="grid gap-4 md:grid-cols-2">
 				{/* ---- anomalies, only when there are any ---- */}
@@ -75,7 +38,7 @@ export default function AnalyticsPanel({ base, quote, period }) {
 				{FEATURES.WHAT_CHANGED && (
 					<AnalyticsCard>
 						{isLoading ? (
-							<Skeleton />
+							<WhatChangedSkeleton />
 						) : analytics ? (
 							<WhatChanged analytics={analytics} />
 						) : null}
@@ -86,7 +49,12 @@ export default function AnalyticsPanel({ base, quote, period }) {
 				{FEATURES.MISSING_DAYS && analytics && <MissingDays analytics={analytics} />}
 			</div>
 
-			{FEATURES.COVERAGE && analytics && <CoverageNote analytics={analytics} />}
+			{FEATURES.COVERAGE &&
+				(analytics ? (
+					<CoverageNote analytics={analytics} />
+				) : (
+					<NoteSkeleton lines={2} />
+				))}
 		</div>
 	);
 }

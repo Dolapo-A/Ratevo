@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import IntelligenceCard from "./IntelligenceCard";
 
@@ -20,6 +20,8 @@ function fullAnalytics(overrides = {}) {
 			partial: false,
 			low: 1321.23,
 			high: 1335.69,
+			lowDate: "2026-09-08",
+			highDate: "2026-09-20",
 			positionPct: 45,
 			label: "Mid-range",
 		},
@@ -88,14 +90,27 @@ describe("IntelligenceCard", () => {
 		expect(vol.getByText("3.1% annualised")).toBeInTheDocument();
 	});
 
-	test("the score sits beneath the measurements, with its band and its limits", () => {
+	test("the score sits beneath the measurements, with its band and its limits", async () => {
 		render(<IntelligenceCard analytics={fullAnalytics()} {...props} />);
 
-		expect(screen.getByLabelText(/Ratevo score 54 out of 100, Balanced/)).toHaveTextContent("54");
+		const gauge = screen.getByLabelText(/Ratevo score 54 out of 100, Balanced/);
+		// The figure counts up to its final value, so assert on the settled number
+		// rather than whichever frame the assertion happened to land on.
+		await waitFor(() => expect(gauge).toHaveTextContent("54"));
+
 		expect(screen.getByText(/^Ratevo score$/)).toBeInTheDocument();
 		expect(screen.getByText("Balanced")).toBeInTheDocument();
 		// The disclaimer sits with the number, not in a footer.
 		expect(screen.getByText("A trend rating, not a forecast.")).toBeInTheDocument();
+	});
+
+	test("the gauge shows the score, not a rounded placeholder", () => {
+		render(<IntelligenceCard analytics={fullAnalytics({ score: 63, scoreBand: "Positive" })} {...props} />);
+
+		const gauge = screen.getByLabelText(/Ratevo score 63 out of 100, Positive/);
+		// A semicircle: one path for the empty track, one for the fill.
+		expect(gauge.querySelectorAll("path")).toHaveLength(2);
+		expect(gauge.getAttribute("viewBox")).toBe("0 0 104 60");
 	});
 
 	test("the breakdown is closed by default and opens on request", async () => {

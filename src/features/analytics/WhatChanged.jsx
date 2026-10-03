@@ -96,6 +96,32 @@ function InterpretationLayer({ analytics }) {
 }
 
 /**
+ * A rate, at the precision a reader parses rather than measures.
+ *
+ * Fixed two decimals above 0.01, which is the convention every other rate on the
+ * page already follows — the range figure two cards up prints `1,321.23`, and this
+ * printing `1,330.6356` beside it would read as a different measurement of the same
+ * currency rather than the same one at higher precision.
+ *
+ * Below 0.01 the decimals follow the magnitude instead, because a fixed two would
+ * print a confident `0.00` for a pair that moved. That is not a hypothetical: it is
+ * the same reason the engine withholds a difference it cannot state.
+ *
+ * The payload keeps more precision than this on purpose. The number a reader sees
+ * and the number arithmetic is done on are allowed to differ in digits, as long as
+ * they are the same number.
+ */
+function fmtRate(value) {
+	if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+	return Math.abs(value) >= 0.01
+		? value.toLocaleString("en-US", {
+				minimumFractionDigits: 2,
+				maximumFractionDigits: 2,
+			})
+		: value.toLocaleString("en-US", { maximumFractionDigits: 12 });
+}
+
+/**
  * The two windows as diverging bars.
  *
  * This is the scan; the sentence below it is the explanation. Keeping both is
@@ -105,52 +131,87 @@ function InterpretationLayer({ analytics }) {
  *
  * Bars are scaled against the larger of the two, so the longer one always fills
  * half the track and the shorter is read relative to it.
+ *
+ * `nowMove` and `priorMove` carry the levels each bar was measured between. They
+ * come from the engine rather than being derived from the percentage here: the
+ * percentage on screen is already rounded for reading, so multiplying it back out
+ * by the rate would describe a pair of observations the engine never looked at.
+ * Null on either one is normal — the engine withholds a difference too small to
+ * state at any honest precision — and the row then shows the percentage alone
+ * rather than a fabricated level.
  */
-function WindowBars({ now, prior, periodLabel }) {
+function WindowBars({ now, prior, periodLabel, nowMove, priorMove }) {
 	const maxAbs = Math.max(Math.abs(now), Math.abs(prior), 0.1);
 
-	const bar = (value, isNow) => {
+	const bar = (value, isNow, move) => {
 		const half = (Math.abs(value) / maxAbs) * 48;
 		const left = value >= 0 ? 50 : 50 - half;
 
+		// The level line sits under its own bar, so the two reads never blur
+		// together.
+		//
+		// The signed difference is a separate question from the two levels, and the
+		// engine answers them independently: `from` and `to` can both be known while
+		// `abs` is null, because the difference was too small to state at any honest
+		// precision. Printing the levels then, without the amount, keeps the
+		// measurable half of the figure and drops only the part that would be a
+		// fabrication. Collapsing the two into one condition would throw away a real
+		// measurement because an unrelated one was withheld.
+		const hasLevels = move && Number.isFinite(move.from) && Number.isFinite(move.to);
+		const levelText = hasLevels
+			? Number.isFinite(move.abs)
+				? `${fmtRate(move.from)} → ${fmtRate(move.to)}  (${move.abs >= 0 ? "+" : "−"}${fmtRate(Math.abs(move.abs))})`
+				: `${fmtRate(move.from)} → ${fmtRate(move.to)}`
+			: null;
+
 		return (
-			<div className="grid grid-cols-[72px_1fr_58px] items-center gap-3">
-				<span
-					className={`text-[11.5px] ${
-						isNow ? "font-bold text-slate-700" : "text-slate-400"
-					}`}
-				>
-					{isNow ? `Last ${periodLabel}` : `Prior ${periodLabel}`}
-				</span>
-				<span className="relative block h-5 overflow-hidden rounded-md bg-slate-50">
-					{/* The zero line, so direction is legible without reading the sign. */}
-					<span className="absolute inset-y-0 left-1/2 w-px bg-slate-200" />
+			<div key={isNow ? "now" : "prior"} data-window={isNow ? "now" : "prior"}>
+				<div className="grid grid-cols-[72px_1fr_58px] items-center gap-3">
 					<span
-						className="absolute inset-y-0 rounded-md"
-						style={{
-							left: `${left}%`,
-							width: `${half}%`,
-							background:
-								value >= 0 ? "rgba(15,122,83,.22)" : "rgba(179,38,63,.2)",
-						}}
-					/>
-				</span>
-				<span
-					className={`num text-right text-[11.5px] font-bold tabular-nums ${
-						value >= 0 ? "text-direction-up" : "text-direction-down"
-					}`}
-				>
-					{value >= 0 ? "+" : "−"}
-					{Math.abs(value).toFixed(1)}%
-				</span>
+						className={`text-[11.5px] ${
+							isNow ? "font-bold text-slate-700" : "text-slate-400"
+						}`}
+					>
+						{isNow ? `Last ${periodLabel}` : `Prior ${periodLabel}`}
+					</span>
+					<span className="relative block h-5 overflow-hidden rounded-md bg-slate-50">
+						{/* The zero line, so direction is legible without reading the sign. */}
+						<span className="absolute inset-y-0 left-1/2 w-px bg-slate-200" />
+						<span
+							className="absolute inset-y-0 rounded-md"
+							style={{
+								left: `${left}%`,
+								width: `${half}%`,
+								background:
+									value >= 0 ? "rgba(15,122,83,.22)" : "rgba(179,38,63,.2)",
+							}}
+						/>
+					</span>
+					<span
+						className={`num text-right text-[11.5px] font-bold tabular-nums ${
+							value >= 0 ? "text-direction-up" : "text-direction-down"
+						}`}
+					>
+						{value >= 0 ? "+" : "−"}
+						{Math.abs(value).toFixed(1)}%
+					</span>
+				</div>
+				{levelText && (
+					<p
+						data-levels={isNow ? "now" : "prior"}
+						className="num mt-0.5 pl-[84px] text-right text-[11px] leading-tight tabular-nums text-slate-400"
+					>
+						{levelText}
+					</p>
+				)}
 			</div>
 		);
 	};
 
 	return (
-		<div className="space-y-1.5">
-			{bar(now, true)}
-			{bar(prior, false)}
+		<div className="space-y-2.5">
+			{bar(now, true, nowMove)}
+			{bar(prior, false, priorMove)}
 		</div>
 	);
 }
@@ -204,6 +265,8 @@ export default function WhatChanged({ analytics }) {
 					now={analytics.changePct}
 					prior={analytics.priorPeriod}
 					periodLabel={analytics.periodLabel}
+					nowMove={analytics.move}
+					priorMove={analytics.priorMove}
 				/>
 			</div>
 

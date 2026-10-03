@@ -11,6 +11,8 @@ import { useQuote } from "./hooks/useQuote";
 import { useConversionHistory } from "./hooks/useConversionHistory";
 import ConversionChart from "./components/ConversionChart";
 import AnalyticsPanel from "./features/analytics/AnalyticsPanel";
+import IntelligenceCard from "./features/analytics/IntelligenceCard";
+import { FEATURES } from "./config/features";
 import formatRate from "./services/rateFormatter";
 import {
 	groupDigits,
@@ -21,6 +23,13 @@ import {
 import { DEFAULT_PERIOD, getPeriod } from "./config/periods";
 import { useAnalytics } from "./hooks/useAnalytics";
 import ErrorBoundary from "./components/ErrorBoundary";
+import {
+	AmountSkeleton,
+	CurrencyChipSkeleton,
+	InlineValueSkeleton,
+	IntelligenceCardSkeleton,
+	LoadingRegion,
+} from "./components/Skeleton";
 
 /**
  * Where to point when the visitor's own currency cannot be used — either it is
@@ -58,7 +67,14 @@ function App() {
 	// engine returns `change` for every window on every request, so one fetch
 	// serves all six options. React Query shares the cache entry with
 	// AnalyticsPanel — same key, so this adds no request.
-	const { analytics } = useAnalytics(fromCurrency, toCurrency, analyticsPeriod);
+	// One analytics request for the page. The period filter and the intelligence
+	// card both read from it, and the panel below receives it rather than asking
+	// again — so there is one source for the figures on screen.
+	const { analytics, isLoadingAnalytics } = useAnalytics(
+		fromCurrency,
+		toCurrency,
+		analyticsPeriod
+	);
 
 	const {
 		history,
@@ -139,14 +155,13 @@ function App() {
 	]);
 
 	const conversionRate = quote?.rate ?? null;
-	const quoteAsOf = quote?.base?.asOf ?? null;
 
-	const LoadingButton = () => (
-		<div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full animate-pulse">
-			<div className="w-7 h-5 bg-gray-200 rounded"></div>
-			<div className="w-4 h-4 text-gray-400 animate-spin" />
-		</div>
-	);
+	// What the converter is still waiting on. Kept separate from the analytics and
+	// history states because those have their own regions — a slow chart must not
+	// hold up the amount the user is typing.
+	const isConvertingRate =
+		isLoadingQuote || isLoadingCurrencies || isLoadingLocation;
+	const quoteAsOf = quote?.base?.asOf ?? null;
 
 	// Add this function to handle swapping
 	const handleSwapCurrencies = () => {
@@ -181,40 +196,76 @@ function App() {
 				}}
 			/>
 
-			<div className="flex flex-col min-h-screen">
+			<div className="flex flex-col min-h-screen bg-slate-50 px-4 lg:px-6">
 				<Analytics />
 				{queryError ? (
-					<div className="mx-4 mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+					<div className="mb-4 rounded-xl border border-red-200 bg-red-50 py-3 text-red-800">
 						Unable to load the currency list. Please try again shortly.
 					</div>
 				) : null}
 
 				{quoteError ? (
-					<div className="mx-4 mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+					<div className="mb-4 rounded-xl border border-red-200 bg-red-50 py-3 text-red-800">
 						Unable to load the current exchange rate for {fromCurrency}/{toCurrency}. Please try again shortly.
 					</div>
 				) : null}
 
-				{/* Add Navigation Bar */}
 				<nav className="w-full bg-white border-b border-gray-200 mb-4">
 					<div className="max-w-lg mx-auto py-4">
-						<img
-							src="/logo.svg"
-							alt="Currency Exchange Logo"
-							className="h-8 mx-auto"
-						/>
+						<img src="/logo.svg" alt="Ratevo" className="h-8 mx-auto" />
 					</div>
 				</nav>
-				<div className="max-w-screen-2xl m-auto ">
-				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4 lg:px-6 px-4">
-					<div className="p-4 flex-grow bg-slate-100 rounded-2xl">
+
+				{/* The page says what Ratevo is before it asks for anything.
+				    The converter is how people arrive, but a converter is the one
+				    thing every competitor does too — so the differentiator is stated
+				    up front rather than left below the fold to be found. */}
+				<header className="px-4 lg:px-6 mt-4 mb-10 max-w-screen-lg m-auto">
+					<h1 className="text-[22px] font-semibold leading-tight tracking-tight text-center text-slate-900 sm:text-2xl">
+						Convert any of 161 currencies — and see what the rate actually means.
+					</h1>
+					<p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500">
+						A daily indicative snapshot, plus the range, trend and volatility behind it.
+						Where Ratevo cannot measure something, it says so rather than guessing.
+					</p>
+				</header>
+
+				
+				<div className="max-w-screen-xl m-auto">
+					{/* The intelligence card sits above the converter deliberately: it is
+				    the reason to stay, and putting it first makes the first screen the
+				    pitch and the tool at once. */}
+				{FEATURES.INTELLIGENCE && (
+					<div className="mb-4">
+						<LoadingRegion
+							isLoading={isLoadingAnalytics && !analytics}
+							label="Rate intelligence"
+						>
+							{analytics ? (
+								<IntelligenceCard
+									analytics={analytics}
+									baseCurrency={fromCurrency}
+									quoteCurrency={toCurrency}
+								/>
+							) : (
+								<IntelligenceCardSkeleton />
+							)}
+						</LoadingRegion>
+					</div>
+				)}
+				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4 ">
+						<LoadingRegion
+							isLoading={isConvertingRate}
+							label="Conversion"
+							className="p-4 flex-grow bg-slate-100 rounded-2xl"
+						>
 						<div className="max-w-lg mx-auto">
 							{/* Title */}
-							<h1 className="text-2xl font-semibold mb-2">
-								Compare Different Currency Rates
-							</h1>
-							<p className="text-gray-600 mb-6">
-								Enter amount and select currency to convert to
+							<h2 className="text-lg font-semibold mb-2 tracking-tight">
+								Convert
+							</h2>
+							<p className="text-gray-500 text-[13px] mb-4">
+								Enter an amount and pick your currencies
 							</p>
 
 							{/* Amount Input Section */}
@@ -275,7 +326,7 @@ function App() {
 								</label>
 								<div className="p-4 rounded-2xl bg-white border border-gray-200 flex justify-between items-center gap-3 figure-fit">
 									{isLoadingLocation || isLoadingCurrencies || isLoadingQuote ? (
-										<LoadingButton />
+										<CurrencyChipSkeleton />
 									) : (
 										<button
 											type="button"
@@ -299,16 +350,24 @@ function App() {
 											<ChevronDownIcon className="w-4 h-4 text-gray-400" />
 										</button>
 									)}
-									<span
-										className="figure-fit__value min-w-0 flex-1 text-right font-bold text-slate-900"
-										title={convertedFigure ?? undefined}
-									>
-										<span className={figureSizeClass(convertedFigure)}>
-											{convertedFigure ?? "0.00"}
-										</span>
-										<span className="figure-fit__unit ml-1.5 text-lg font-semibold text-gray-400">
-											{toCurrency}
-										</span>
+									<span className="figure-fit__value min-w-0 flex-1 text-right font-bold text-slate-900">
+										{isConvertingRate ? (
+											<span className="inline-block align-middle">
+												<AmountSkeleton />
+											</span>
+										) : (
+											<>
+												<span
+													className={figureSizeClass(convertedFigure)}
+													title={convertedFigure ?? undefined}
+												>
+													{convertedFigure ?? "—"}
+												</span>
+												<span className="figure-fit__unit ml-1.5 text-lg font-semibold text-gray-400">
+													{toCurrency}
+												</span>
+											</>
+										)}
 									</span>
 								</div>
 							</div>
@@ -323,11 +382,15 @@ function App() {
 								</div>
 								<div className="flex justify-between gap-4">
 									<span className="text-gray-600">Exchange Rate</span>
-									<span className="num tabular-nums">
-										{1} {fromCurrency} ={" "}
-										{conversionRate ? formatRate(conversionRate) : "X"}{" "}
-										{toCurrency}
-									</span>
+									{isConvertingRate ? (
+										<InlineValueSkeleton widthClass="w-28" />
+									) : (
+										<span className="num tabular-nums">
+											{1} {fromCurrency} ={" "}
+											{conversionRate ? formatRate(conversionRate) : "—"}{" "}
+											{toCurrency}
+										</span>
+									)}
 								</div>
 							</div>
 
@@ -349,15 +412,22 @@ function App() {
 								selectedCurrency={toCurrency}
 								returnFocusTo={toTriggerRef}
 							/>
-						</div>
-					</div>
+							</div>
+						</LoadingRegion>
 
 					<div className="bg-slate-100 rounded-2xl h-full flex justify-center overflow-hidden">
 						<ErrorBoundary label="The chart could not be displayed.">
 							<ConversionChart
 								data={history.data}
-								base={history.base}
-								quote={history.quote}
+								/* The selected pair, not `history.base` / `history.quote`.
+								   The history payload echoes them back, but only once it has
+								   resolved — and changing the window changes the query key, which
+								   drops `data` back to undefined for a frame. The quote is keyed
+								   separately and survives that, so the header had a rate to print
+								   and no currencies to print it between: "1 undefined = 1330.64
+								   undefined". State cannot disagree with itself that way. */
+								base={fromCurrency}
+								quote={toCurrency}
 								conversionRate={conversionRate}
 								isLoading={isLoadingHistory}
 								error={historyError}
@@ -374,13 +444,9 @@ function App() {
 				    src/config/features.js, so this block can ship a piece at a
 				    time. With every flag off it renders nothing at all and the
 				    converter looks exactly as it did before. */}
-				<div className="grid px-4 lg:px-6">
+				<div className="grid">
 					<ErrorBoundary label="The analytics panel could not be displayed.">
-						<AnalyticsPanel
-							base={fromCurrency}
-							quote={toCurrency}
-							period={analyticsPeriod}
-						/>
+						<AnalyticsPanel analytics={analytics} isLoading={isLoadingAnalytics} />
 					</ErrorBoundary>
 				</div>
 				</div>

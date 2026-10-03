@@ -8,6 +8,7 @@ import {
 	ResponsiveContainer,
 	Area,
 } from "recharts";
+import { LoadingRegion } from "./Skeleton";
 import LoadingComponent from "./LoadingComponent";
 import PeriodFilter from "./PeriodFilter";
 import formatRate from "../services/rateFormatter";
@@ -34,18 +35,28 @@ function ChartHeader({
 	// The rate is legitimately null while the quote loads or the pair is changing.
 	const hasRate = conversionRate !== null && Number.isFinite(conversionRate);
 
+	// A rate is only meaningful between two named currencies. During a window change
+	// the history query drops to undefined for a frame while the quote survives it,
+	// which used to print "1 undefined = 1330.64 undefined". "Loading current rate…"
+	// is the honest answer for that frame: the figure exists, the pair it belongs to
+	// does not yet.
+	const pairKnown =
+		typeof base === "string" &&
+		base.length > 0 &&
+		typeof quote === "string" &&
+		quote.length > 0;
+	const rateLine = hasRate && pairKnown
+		? `1 ${base} = ${formatRate(conversionRate)} ${quote}`
+		: "Loading current rate…";
+
 	// Title and rate on the left, the control on the right, sharing one baseline
 	// row. The filter sits opposite the figures it changes them, and above it on
 	// narrow screens rather than squeezing the chart.
 	return (
 		<div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 p-4 pb-0 mb-8">
 			<div className="min-w-0">
-				<h1 className="text-lg font-semibold tracking-tight">{rangeLabel}</h1>
-				<h3 className="mt-1 text-base font-semibold text-gray-500">
-					{hasRate
-						? `1 ${base} = ${formatRate(conversionRate)} ${quote}`
-						: "Loading current rate…"}
-				</h3>
+				<p className="text-lg font-semibold tracking-tight">{rangeLabel}</p>
+				<p className="mt-1 text-base font-semibold text-gray-500">{rateLine}</p>
 			</div>
 
 			<PeriodFilter
@@ -104,9 +115,11 @@ export default function ConversionChart({
 
 			<div className="flex-1 min-h-[450px] lg:min-h-96 pr-4 pb-4">
 				{isLoading && (
-					<div className="content-center">
-						<LoadingComponent />
-					</div>
+					<LoadingRegion isLoading label="Rate history">
+						<div className="content-center">
+							<LoadingComponent />
+						</div>
+					</LoadingRegion>
 				)}
 
 				{!isLoading && error && (
